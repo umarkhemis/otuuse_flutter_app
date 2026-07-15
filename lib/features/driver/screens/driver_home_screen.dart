@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_provider.dart';
+import '../../rating/screens/rating_dialog.dart';
 import '../data/driver_models.dart';
 import '../providers/driver_provider.dart';
 
@@ -11,6 +12,20 @@ class DriverHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(driverProvider);
+
+    ref.listen(driverProvider, (previous, next) {
+      if (next.completedRideId != null && previous?.completedRideId == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          await showRatingDialog(
+            context: context,
+            ref: ref,
+            rideId: next.completedRideId!,
+            ratingFor: 'passenger',
+          );
+          ref.read(driverProvider.notifier).clearCompletedRide();
+        });
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(

@@ -1,0 +1,21 @@
+The driver_home_screen.dart only needs TWO additions to its existing file:
+
+1. Import the rating dialog at the top:
+   import '../../rating/screens/rating_dialog.dart';
+
+2. Add ref.listen inside the build method (before return Scaffold):
+   ref.listen(driverProvider, (previous, next) {
+     if (next.completedRideId != null && previous?.completedRideId == null) {
+       WidgetsBinding.instance.addPostFrameCallback((_) async {
+         await showRatingDialog(
+           context: context,
+           ref: ref,
+           rideId: next.completedRideId!,
+           ratingFor: 'passenger',
+         );
+         ref.read(driverProvider.notifier).clearCompletedRide();
+       });
+     }
+   });
+
+Apply these two changes via WSL patch script below.

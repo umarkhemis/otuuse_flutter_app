@@ -27,9 +27,7 @@ class AuthRepository {
     }
   }
 
-  /// [pin] is only meaningful for admin accounts - the backend requires it
-  /// there and ignores it for passenger/driver. Leaving it null is correct
-  /// for the regular consumer app login flow.
+  /// [pin] is only meaningful for admin accounts.
   Future<AuthSession> verifyOtp({
     required String phoneNumber,
     required String otp,
@@ -43,15 +41,18 @@ class AuthRepository {
       });
       final data = response.data;
       final roleStr = data['role'] as String;
+      final name    = data['name'] as String? ?? '';
       await _tokenStorage.saveTokens(
-        accessToken: data['access_token'] as String,
+        accessToken:  data['access_token']  as String,
         refreshToken: data['refresh_token'] as String,
-        userId: data['user_id'] as String,
-        role: roleStr,
+        userId:       data['user_id']       as String,
+        role:         roleStr,
+        name:         name,
       );
       return AuthSession(
         userId: data['user_id'] as String,
-        role: AuthSession.roleFromString(roleStr),
+        role:   AuthSession.roleFromString(roleStr),
+        name:   name,
       );
     } on DioException catch (e) {
       throw ApiException.fromDioException(e);
@@ -71,12 +72,14 @@ class AuthRepository {
 
   Future<AuthSession?> restoreSession() async {
     final accessToken = await _tokenStorage.getAccessToken();
-    final role = await _tokenStorage.getRole();
-    final userId = await _tokenStorage.getUserId();
+    final role        = await _tokenStorage.getRole();
+    final userId      = await _tokenStorage.getUserId();
+    final name        = await _tokenStorage.getName() ?? '';
     if (accessToken == null || role == null || userId == null) return null;
     return AuthSession(
       userId: userId,
-      role: AuthSession.roleFromString(role),
+      role:   AuthSession.roleFromString(role),
+      name:   name,
     );
   }
 }

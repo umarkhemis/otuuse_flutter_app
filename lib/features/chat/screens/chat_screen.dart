@@ -43,6 +43,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
+  void _confirmClearHistory() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear chat'),
+        content: const Text(
+            'This will delete all messages and start a fresh conversation.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(chatProvider.notifier).clearHistory();
+            },
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _formatUgx(int amount) {
     final s = amount.toString();
     final buf = StringBuffer();
@@ -74,7 +100,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             onTap: () => showWalletSheet(context),
             borderRadius: BorderRadius.circular(20),
             child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              margin:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
               padding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -95,7 +122,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ? const SizedBox(
                           width: 12,
                           height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 1.5))
+                          child:
+                              CircularProgressIndicator(strokeWidth: 1.5))
                       : Text(
                           walletState.balanceUgx != null
                               ? 'UGX ${_formatUgx(walletState.balanceUgx!)}'
@@ -105,13 +133,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               .labelSmall
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
-                                color:
-                                    Theme.of(context).colorScheme.primary,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary,
                               ),
                         ),
                 ],
               ),
             ),
+          ),
+          // Clear chat history
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Clear chat',
+            onPressed: _confirmClearHistory,
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -213,7 +248,8 @@ class _ChatBubble extends StatelessWidget {
         constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.78),
         margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isUser
               ? colorScheme.primaryContainer
@@ -225,7 +261,7 @@ class _ChatBubble extends StatelessWidget {
           children: [
             Text(turn.text),
 
-            // Searching spinner: shown while waiting for driver to accept
+            // Searching spinner while waiting for driver to accept
             if (turn.isSearching) ...[
               const SizedBox(height: 10),
               Row(
@@ -242,25 +278,26 @@ class _ChatBubble extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     'Finding your driver...',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.primary,
-                        ),
+                    style:
+                        Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.primary,
+                            ),
                   ),
                 ],
               ),
             ],
 
-            // Fare card: shown after driver accepts
+            // Fare card appears after driver accepts
             if (turn.fareUgx != null) ...[
               const SizedBox(height: 10),
               _FareQuoteCard(
-                fareUgx: turn.fareUgx!,
-                status: turn.fareStatus ?? FareQuoteStatus.pending,
-                isSending: isSending,
-                driverName: turn.driverName,
+                fareUgx:     turn.fareUgx!,
+                status:      turn.fareStatus ?? FareQuoteStatus.pending,
+                isSending:   isSending,
+                driverName:  turn.driverName,
                 driverPhone: turn.driverPhone,
                 driverPlate: turn.driverPlate,
-                onRespond: onRespond,
+                onRespond:   onRespond,
               ),
             ],
           ],
@@ -291,7 +328,7 @@ class _FareQuoteCard extends StatelessWidget {
   final String? driverPhone;
   final String? driverPlate;
 
-  String _formatUgx(int amount) {
+  String _fmt(int amount) {
     final s = amount.toString();
     final buf = StringBuffer();
     for (var i = 0; i < s.length; i++) {
@@ -311,7 +348,7 @@ class _FareQuoteCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Driver details - shown when available
+            // Driver info
             if (driverName != null) ...[
               Row(
                 children: [
@@ -319,26 +356,21 @@ class _FareQuoteCard extends StatelessWidget {
                       size: 16,
                       color: Theme.of(context).colorScheme.primary),
                   const SizedBox(width: 6),
-                  Text(
-                    driverName!,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+                  Text(driverName!,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
                 ],
               ),
               if (driverPlate != null && driverPlate != '—') ...[
                 const SizedBox(height: 3),
-                Text(
-                  'Plate: $driverPlate',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                Text('Plate: $driverPlate',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context)
                             .colorScheme
                             .onSurface
-                            .withOpacity(0.6),
-                      ),
-                ),
+                            .withOpacity(0.6))),
               ],
               if (driverPhone != null && driverPhone!.isNotEmpty) ...[
                 const SizedBox(height: 3),
@@ -351,18 +383,15 @@ class _FareQuoteCard extends StatelessWidget {
                             .onSurface
                             .withOpacity(0.5)),
                     const SizedBox(width: 4),
-                    Text(
-                      driverPhone!,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
-                          ),
-                    ),
+                    Text(driverPhone!,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withOpacity(0.6))),
                   ],
                 ),
               ],
@@ -377,13 +406,11 @@ class _FareQuoteCard extends StatelessWidget {
             // Fare
             Text('Estimated fare',
                 style: Theme.of(context).textTheme.labelMedium),
-            Text(
-              'UGX ${_formatUgx(fareUgx)}',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text('UGX ${_fmt(fareUgx)}',
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
 
-            // Action buttons
+            // Buttons
             if (status == FareQuoteStatus.pending)
               Row(
                 children: [

@@ -22,10 +22,11 @@ class TokenStorage {
   // being recreated by Riverpod between rebuilds.
   static final _cache = <String, String?>{};
 
-  static const _accessKey = 'access_token';
+  static const _accessKey  = 'access_token';
   static const _refreshKey = 'refresh_token';
-  static const _userIdKey = 'user_id';
+  static const _userIdKey  = 'user_id';
   static const _userRoleKey = 'user_role';
+  static const _userNameKey = 'user_name';
 
   Future<String?> getAccessToken() async {
     try {
@@ -59,26 +60,37 @@ class TokenStorage {
     }
   }
 
+  Future<String?> getName() async {
+    try {
+      return await _storage.read(key: _userNameKey) ?? _cache[_userNameKey];
+    } catch (_) {
+      return _cache[_userNameKey];
+    }
+  }
+
   Future<void> saveTokens({
     required String accessToken,
     required String refreshToken,
     required String userId,
     required String role,
+    String name = '',
   }) async {
     // Always write to memory first - this is what the Dio interceptor
     // reads on every request, so it must never be null after login.
-    _cache[_accessKey] = accessToken;
-    _cache[_refreshKey] = refreshToken;
-    _cache[_userIdKey] = userId;
+    _cache[_accessKey]   = accessToken;
+    _cache[_refreshKey]  = refreshToken;
+    _cache[_userIdKey]   = userId;
     _cache[_userRoleKey] = role;
+    _cache[_userNameKey] = name;
 
     // Then attempt to persist across page reloads. Failure is acceptable.
     try {
       await Future.wait([
-        _storage.write(key: _accessKey, value: accessToken),
-        _storage.write(key: _refreshKey, value: refreshToken),
-        _storage.write(key: _userIdKey, value: userId),
+        _storage.write(key: _accessKey,   value: accessToken),
+        _storage.write(key: _refreshKey,  value: refreshToken),
+        _storage.write(key: _userIdKey,   value: userId),
         _storage.write(key: _userRoleKey, value: role),
+        _storage.write(key: _userNameKey, value: name),
       ]);
     } catch (_) {}
   }

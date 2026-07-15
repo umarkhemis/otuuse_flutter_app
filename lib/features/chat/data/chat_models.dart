@@ -35,7 +35,6 @@ class ChatApiResponse {
 }
 
 /// Returned by GET /chat/ride-status/{ride_id}.
-/// Passenger polls this every 4 seconds while waiting for driver to accept.
 class RideStatusResponse {
   const RideStatusResponse({
     required this.status,
@@ -61,6 +60,9 @@ class RideStatusResponse {
 
   bool get isCancelled => status == 'cancelled';
 
+  /// Triggers passenger rating dialog.
+  bool get isCompleted => status == 'completed' || status == 'paid';
+
   factory RideStatusResponse.fromJson(Map<String, dynamic> json) =>
       RideStatusResponse(
         status: json['status'] as String,
@@ -75,7 +77,6 @@ class RideStatusResponse {
 /// Result of POST /chat/confirm-ride.
 class ConfirmRideResult {
   ConfirmRideResult({this.rideId, required this.message});
-
   final String? rideId;
   final String message;
 }
@@ -84,13 +85,6 @@ enum ChatTurnRole { user, agent }
 
 enum FareQuoteStatus { pending, confirmed, cancelled }
 
-/// A single bubble in the conversation.
-///
-/// [isSearching] - true while waiting for the driver to accept after dispatch.
-///   The bubble shows a spinner under the "Hold on..." text.
-/// [pendingRideId] - ride_id used when polling ride-status and on confirm.
-/// [fareUgx] / [fareStatus] - set once the driver accepts (via polling).
-/// [driverName] / [driverPhone] / [driverPlate] - shown on the fare card.
 class ChatTurn {
   const ChatTurn({
     required this.role,

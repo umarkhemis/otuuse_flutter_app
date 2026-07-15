@@ -13,6 +13,7 @@ class DriverState {
     this.activeRide,
     this.isPerformingAction = false,
     this.errorMessage,
+    this.completedRideId,
   });
 
   final bool isOnline;
@@ -20,6 +21,9 @@ class DriverState {
   final ActiveRide? activeRide;
   final bool isPerformingAction;
   final String? errorMessage;
+
+  /// Set after driver taps "Complete Ride" - triggers rating dialog in the UI.
+  final String? completedRideId;
 
   DriverState copyWith({
     bool? isOnline,
@@ -29,6 +33,8 @@ class DriverState {
     bool? isPerformingAction,
     String? errorMessage,
     bool clearError = false,
+    String? completedRideId,
+    bool clearCompletedRide = false,
   }) {
     return DriverState(
       isOnline: isOnline ?? this.isOnline,
@@ -39,6 +45,9 @@ class DriverState {
       isPerformingAction: isPerformingAction ?? this.isPerformingAction,
       errorMessage:
           clearError ? null : (errorMessage ?? this.errorMessage),
+      completedRideId: clearCompletedRide
+          ? null
+          : (completedRideId ?? this.completedRideId),
     );
   }
 }
@@ -58,8 +67,7 @@ class DriverNotifier extends Notifier<DriverState> {
   Future<void> toggleAvailability() async {
     if (state.isTogglingAvailability) return;
     final goingOnline = !state.isOnline;
-    state = state.copyWith(
-        isTogglingAvailability: true, clearError: true);
+    state = state.copyWith(isTogglingAvailability: true, clearError: true);
     try {
       await _repo.setAvailability(goingOnline);
       state = state.copyWith(
@@ -82,7 +90,6 @@ class DriverNotifier extends Notifier<DriverState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    // Fetch immediately, then every 4 seconds.
     _fetchActiveRide();
     _pollTimer = Timer.periodic(
       const Duration(seconds: 4),
@@ -102,26 +109,36 @@ class DriverNotifier extends Notifier<DriverState> {
         activeRide: ride,
         clearActiveRide: ride == null,
       );
-    } catch (_) {
-      // Polling failures are silent so they don't disrupt the driver's view.
-    }
+    } catch (_) {}
   }
 
   Future<void> performAction(String action) async {
     final ride = state.activeRide;
     if (ride == null || state.isPerformingAction) return;
+
+    final rideId = ride.id;
     state = state.copyWith(isPerformingAction: true, clearError: true);
+
     try {
-      await _repo.performAction(ride.id, action);
-      // Immediately refresh to pick up the new status from the backend.
+      await _repo.performAction(rideId, action);
       await _fetchActiveRide();
       state = state.copyWith(isPerformingAction: false);
+
+      // After completing a ride, trigger rating dialog for the passenger.
+      if (action == 'complete') {
+        state = state.copyWith(completedRideId: rideId);
+      }
     } catch (e) {
       state = state.copyWith(
         isPerformingAction: false,
         errorMessage: e.toString(),
       );
     }
+  }
+
+  /// Called by the UI after the rating dialog is dismissed.
+  void clearCompletedRide() {
+    state = state.copyWith(clearCompletedRide: true);
   }
 }
 

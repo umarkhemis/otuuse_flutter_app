@@ -25,7 +25,6 @@ class ChatState {
     return ChatState(
       turns: turns ?? this.turns,
       isSending: isSending ?? this.isSending,
-      // Explicitly nullable - copyWith(errorMessage: null) clears it.
       errorMessage: errorMessage,
     );
   }
@@ -39,18 +38,32 @@ class ChatNotifier extends Notifier<ChatState> {
   @override
   ChatState build() {
     ref.onDispose(() => _searchTimer?.cancel());
-    return const ChatState(
-      turns: [
-        ChatTurn(
-          role: ChatTurnRole.agent,
-          text:
-              'Hi! Where would you like to go, or what would you like delivered?',
-        ),
-      ],
-    );
+    return ChatState(turns: [_buildWelcomeTurn()]);
+  }
+
+  /// Builds a time-aware, personalised welcome message.
+  ChatTurn _buildWelcomeTurn() {
+    final authState = ref.read(authProvider);
+    final name = authState.session?.name ?? '';
+
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good morning'
+        : hour < 17
+            ? 'Good afternoon'
+            : 'Good evening';
+
+    final nameClause = name.isNotEmpty ? ', $name' : '';
+    final text =
+        '$greeting$nameClause! 👋 Where would you like to go today, '
+        'or what would you like delivered?';
+
+    return ChatTurn(role: ChatTurnRole.agent, text: text);
   }
 
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
+
+  // ── Messaging ─────────────────────────────────────────────────────────────
 
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
@@ -69,9 +82,7 @@ class ChatNotifier extends Notifier<ChatState> {
       final response = await _repo.sendMessage(trimmed);
 
       if (response.rideId != null && response.fareUgx == null) {
-        // Dispatch-first flow: driver has been alerted but hasn't accepted yet.
-        // Show "Hold on..." message with a searching spinner.
-        // The fare card appears after the driver accepts (via polling below).
+        // Driver-first flow: ride dispatched, waiting for driver to accept.
         final searchTurnIndex = state.turns.length;
         state = state.copyWith(
           turns: [
@@ -87,7 +98,6 @@ class ChatNotifier extends Notifier<ChatState> {
         );
         _startSearchPolling(response.rideId!, searchTurnIndex);
       } else {
-        // Regular response (chat, delivery, status update, etc.)
         state = state.copyWith(
           turns: [
             ...state.turns,
@@ -97,7 +107,7 @@ class ChatNotifier extends Notifier<ChatState> {
               fareUgx: response.fareUgx,
               fareStatus:
                   response.fareUgx != null ? FareQuoteStatus.pending : null,
-              driverName: response.driverName,
+              driverName:  response.driverName,
               driverPhone: response.driverPhone,
               driverPlate: response.driverPlate,
             ),
@@ -116,7 +126,6 @@ class ChatNotifier extends Notifier<ChatState> {
     _searchTimer?.cancel();
     _searchingRideId = rideId;
     _searchingTurnIndex = turnIndex;
-    // Check immediately, then every 4 seconds.
     _pollRideStatus();
     _searchTimer = Timer.periodic(
       const Duration(seconds: 4),
@@ -136,17 +145,15 @@ class ChatNotifier extends Notifier<ChatState> {
         _searchTimer = null;
         _searchingRideId = null;
 
-        // Update the searching turn: stop spinner + attach fare card data.
-        // The passenger now sees the fare card with driver details.
         final updatedTurns = List<ChatTurn>.from(state.turns);
         if (_searchingTurnIndex >= 0 &&
             _searchingTurnIndex < updatedTurns.length) {
           updatedTurns[_searchingTurnIndex] =
               updatedTurns[_searchingTurnIndex].copyWith(
             isSearching: false,
-            fareUgx: status.fareUgx,
-            fareStatus: FareQuoteStatus.pending,
-            driverName: status.driverName,
+            fareUgx:     status.fareUgx,
+            fareStatus:  FareQuoteStatus.pending,
+            driverName:  status.driverName,
             driverPhone: status.driverPhone,
             driverPlate: status.driverPlate,
           );
@@ -163,22 +170,18 @@ class ChatNotifier extends Notifier<ChatState> {
           updatedTurns[_searchingTurnIndex] = ChatTurn(
             role: ChatTurnRole.agent,
             text:
-                "Sorry, we couldn't find an available driver right now. Please try again in a few minutes.",
-            isSearching: false,
+                "Sorry, we couldn't find a driver right now. Please try again in a few minutes.",
           );
         }
         state = state.copyWith(turns: updatedTurns);
       }
-      // If status is 'requested' or 'matched', keep polling.
     } catch (_) {
-      // Polling failures are silent - don't disrupt the passenger's view.
+      // Silent - don't disrupt the passenger's view.
     }
   }
 
-  // ── Fare card confirmation ────────────────────────────────────────────────
+  // ── Fare card ─────────────────────────────────────────────────────────────
 
-  /// Called when passenger taps Confirm or Cancel on the fare card.
-  /// [turnIndex] identifies which turn holds the fare card.
   Future<void> respondToFareQuote(int turnIndex, bool confirmed) async {
     final rideId = state.turns[turnIndex].pendingRideId;
     if (rideId == null || state.isSending) return;
@@ -193,13 +196,24 @@ class ChatNotifier extends Notifier<ChatState> {
         fareStatus:
             confirmed ? FareQuoteStatus.confirmed : FareQuoteStatus.cancelled,
       );
-      updatedTurns.add(
-          ChatTurn(role: ChatTurnRole.agent, text: result.message));
+      updatedTurns
+          .add(ChatTurn(role: ChatTurnRole.agent, text: result.message));
 
       state = state.copyWith(turns: updatedTurns, isSending: false);
     } catch (e) {
       state = state.copyWith(isSending: false, errorMessage: e.toString());
     }
+  }
+
+  // ── Chat history ──────────────────────────────────────────────────────────
+
+  /// Clears all messages and resets to the personalised welcome greeting.
+  void clearHistory() {
+    _searchTimer?.cancel();
+    _searchTimer = null;
+    _searchingRideId = null;
+    _searchingTurnIndex = -1;
+    state = ChatState(turns: [_buildWelcomeTurn()]);
   }
 }
 
