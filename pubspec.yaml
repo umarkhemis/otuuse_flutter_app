@@ -1,4 +1,4 @@
-﻿name: otuuse_transport_app
+name: otuuse_transport_app
 description: "Otuuse Transport - AI-powered boda boda ride-hailing and delivery"
 publish_to: 'none'
 version: 1.0.0+1
@@ -16,6 +16,7 @@ dependencies:
   go_router: ^17.3.0
   intl_phone_field: ^3.2.0
   url_launcher: ^6.3.2
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:

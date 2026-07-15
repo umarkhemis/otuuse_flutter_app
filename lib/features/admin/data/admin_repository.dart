@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart' as dio_pkg;
 import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
@@ -114,4 +115,24 @@ class AdminRepository {
       throw ApiException.fromDioException(e);
     }
   }
+
+  Future<void> uploadDeliveryPhoto(
+    String deliveryId,
+    List<int> bytes,
+    String filename,
+  ) async {
+    try {
+      final formData = dio_pkg.FormData.fromMap({
+        'file': dio_pkg.MultipartFile.fromBytes(bytes, filename: filename),
+      });
+      await _apiClient.dio.post(
+        '/admin/deliveries/$deliveryId/photo',
+        data: formData,
+        options: dio_pkg.Options(contentType: 'multipart/form-data'),
+      );
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    }
+  }
+
 }

@@ -1,4 +1,3 @@
-/// Mirrors the backend's ChatResponse.
 class ChatApiResponse {
   ChatApiResponse({
     required this.reply,
@@ -20,21 +19,18 @@ class ChatApiResponse {
   final String? driverPhone;
   final String? driverPlate;
 
-  factory ChatApiResponse.fromJson(Map<String, dynamic> json) {
-    return ChatApiResponse(
-      reply: json['reply'] as String,
-      intent: json['intent'] as String,
-      rideId: json['ride_id'] as String?,
-      deliveryId: json['delivery_id'] as String?,
-      fareUgx: json['fare_ugx'] as int?,
-      driverName: json['driver_name'] as String?,
-      driverPhone: json['driver_phone'] as String?,
-      driverPlate: json['driver_plate'] as String?,
-    );
-  }
+  factory ChatApiResponse.fromJson(Map<String, dynamic> json) => ChatApiResponse(
+        reply: json['reply'] as String,
+        intent: json['intent'] as String,
+        rideId: json['ride_id'] as String?,
+        deliveryId: json['delivery_id'] as String?,
+        fareUgx: json['fare_ugx'] as int?,
+        driverName: json['driver_name'] as String?,
+        driverPhone: json['driver_phone'] as String?,
+        driverPlate: json['driver_plate'] as String?,
+      );
 }
 
-/// Returned by GET /chat/ride-status/{ride_id}.
 class RideStatusResponse {
   const RideStatusResponse({
     required this.status,
@@ -53,14 +49,11 @@ class RideStatusResponse {
   final String? driverPlate;
 
   bool get isAccepted =>
-      status == 'accepted' ||
-      status == 'driver_arriving' ||
-      status == 'in_progress';
+      status == 'accepted' || status == 'driver_arriving' || status == 'in_progress';
   bool get isCancelled => status == 'cancelled';
   bool get isCompleted => status == 'completed' || status == 'paid';
 
-  factory RideStatusResponse.fromJson(Map<String, dynamic> json) =>
-      RideStatusResponse(
+  factory RideStatusResponse.fromJson(Map<String, dynamic> json) => RideStatusResponse(
         status: json['status'] as String,
         fareUgx: json['fare_ugx'] as int?,
         distanceKm: (json['distance_km'] as num?)?.toDouble(),
@@ -71,21 +64,24 @@ class RideStatusResponse {
 }
 
 /// Returned by GET /chat/delivery-status/{delivery_id}.
-/// Passenger polls this to receive admin replies.
 class DeliveryStatusResponse {
   const DeliveryStatusResponse({
     required this.status,
     this.adminReply,
     this.repliedAt,
+    this.passengerPhotoUrl,
+    this.adminPhotoUrl,
   });
 
   final String status;
-
-  /// The latest admin relay message, if any.
   final String? adminReply;
-
-  /// ISO timestamp of the latest reply - used to detect new replies.
   final String? repliedAt;
+
+  /// Photo of item uploaded by passenger.
+  final String? passengerPhotoUrl;
+
+  /// Photo uploaded by admin (e.g. proof of pickup/delivery).
+  final String? adminPhotoUrl;
 
   bool get hasReply => adminReply != null;
   bool get isClosed => status == 'completed' || status == 'cancelled';
@@ -95,10 +91,11 @@ class DeliveryStatusResponse {
         status: json['status'] as String,
         adminReply: json['admin_reply'] as String?,
         repliedAt: json['replied_at'] as String?,
+        passengerPhotoUrl: json['passenger_photo_url'] as String?,
+        adminPhotoUrl: json['admin_photo_url'] as String?,
       );
 }
 
-/// Result of POST /chat/confirm-ride.
 class ConfirmRideResult {
   ConfirmRideResult({this.rideId, required this.message});
   final String? rideId;
@@ -120,6 +117,7 @@ class ChatTurn {
     this.driverName,
     this.driverPhone,
     this.driverPlate,
+    this.photoUrl,
   });
 
   final ChatTurnRole role;
@@ -132,6 +130,9 @@ class ChatTurn {
   final String? driverPhone;
   final String? driverPlate;
 
+  /// URL of a photo attached to this message.
+  final String? photoUrl;
+
   ChatTurn copyWith({
     bool? isSearching,
     String? pendingRideId,
@@ -140,6 +141,7 @@ class ChatTurn {
     String? driverName,
     String? driverPhone,
     String? driverPlate,
+    String? photoUrl,
   }) {
     return ChatTurn(
       role: role,
@@ -151,6 +153,7 @@ class ChatTurn {
       driverName: driverName ?? this.driverName,
       driverPhone: driverPhone ?? this.driverPhone,
       driverPlate: driverPlate ?? this.driverPlate,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 }

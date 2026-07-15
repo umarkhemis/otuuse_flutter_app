@@ -200,3 +200,16 @@ class AdminNotifier extends Notifier<AdminState> {
 
 final adminProvider =
     NotifierProvider<AdminNotifier, AdminState>(AdminNotifier.new);
+  Future<void> uploadDeliveryPhoto(
+    String deliveryId,
+    List<int> bytes,
+    String filename,
+  ) async {
+    try {
+      await _repo.uploadDeliveryPhoto(deliveryId, bytes, filename);
+    } catch (e) {
+      // Non-fatal - log and continue
+    }
+  }
+
+}

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -809,16 +810,46 @@ class _DeliveryReplySheet extends StatefulWidget {
 
 class _DeliveryReplySheetState extends State<_DeliveryReplySheet> {
   final _ctrl = TextEditingController();
+  final _picker = ImagePicker();
   String? _status;
   bool _sending = false;
   String? _error;
+  List<int>? _photoBytes;
+  String? _photoFilename;
+  String? _photoPreviewUrl;   // local preview before upload
 
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
 
+  Future<void> _pickPhoto() async {
+    final XFile? img = await _picker.pickImage(
+        source: ImageSource.gallery, maxWidth: 1200, imageQuality: 85);
+    if (img == null) return;
+    final bytes = await img.readAsBytes();
+    setState(() {
+      _photoBytes = bytes;
+      _photoFilename = img.name.isNotEmpty ? img.name : 'admin_photo.jpg';
+      _photoPreviewUrl = null; // clear old
+    });
+  }
+
   Future<void> _submit() async {
     if (_ctrl.text.trim().isEmpty) { setState(() => _error = 'Please type a message'); return; }
     setState(() { _sending = true; _error = null; });
+
+    // Upload photo first if one was selected
+    if (_photoBytes != null) {
+      try {
+        final repo = widget.ref.read(adminProvider.notifier);
+        // Upload via admin endpoint
+        await widget.ref.read(adminProvider.notifier).uploadDeliveryPhoto(
+          widget.delivery.id, _photoBytes!, _photoFilename ?? 'photo.jpg',
+        );
+      } catch (_) {
+        // Photo upload failure is non-blocking - continue with text reply
+      }
+    }
+
     final ok = await widget.ref.read(adminProvider.notifier).replyToDelivery(
         widget.delivery.id, _ctrl.text.trim(), _status);
     if (mounted) {
@@ -872,6 +903,13 @@ class _DeliveryReplySheetState extends State<_DeliveryReplySheet> {
                 onChanged: (v) => setState(() => _status = v),
               ),
             ]),
+            const SizedBox(height: 12),
+            // Photo attachment
+            OutlinedButton.icon(
+              onPressed: _sending ? null : _pickPhoto,
+              icon: const Icon(Icons.attach_file, size: 18),
+              label: Text(_photoBytes != null ? 'Photo selected ✓' : 'Attach photo (optional)'),
+            ),
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _sending ? null : _submit,
