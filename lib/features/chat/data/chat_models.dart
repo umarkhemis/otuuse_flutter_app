@@ -1,4 +1,4 @@
-/// Mirrors the backend's ChatResponse (app/api/routes/routes.py).
+/// Mirrors the backend's ChatResponse.
 class ChatApiResponse {
   ChatApiResponse({
     required this.reply,
@@ -52,15 +52,11 @@ class RideStatusResponse {
   final String? driverPhone;
   final String? driverPlate;
 
-  /// Show fare card when driver has accepted.
   bool get isAccepted =>
       status == 'accepted' ||
       status == 'driver_arriving' ||
       status == 'in_progress';
-
   bool get isCancelled => status == 'cancelled';
-
-  /// Triggers passenger rating dialog.
   bool get isCompleted => status == 'completed' || status == 'paid';
 
   factory RideStatusResponse.fromJson(Map<String, dynamic> json) =>
@@ -71,6 +67,34 @@ class RideStatusResponse {
         driverName: json['driver_name'] as String?,
         driverPhone: json['driver_phone'] as String?,
         driverPlate: json['driver_plate'] as String?,
+      );
+}
+
+/// Returned by GET /chat/delivery-status/{delivery_id}.
+/// Passenger polls this to receive admin replies.
+class DeliveryStatusResponse {
+  const DeliveryStatusResponse({
+    required this.status,
+    this.adminReply,
+    this.repliedAt,
+  });
+
+  final String status;
+
+  /// The latest admin relay message, if any.
+  final String? adminReply;
+
+  /// ISO timestamp of the latest reply - used to detect new replies.
+  final String? repliedAt;
+
+  bool get hasReply => adminReply != null;
+  bool get isClosed => status == 'completed' || status == 'cancelled';
+
+  factory DeliveryStatusResponse.fromJson(Map<String, dynamic> json) =>
+      DeliveryStatusResponse(
+        status: json['status'] as String,
+        adminReply: json['admin_reply'] as String?,
+        repliedAt: json['replied_at'] as String?,
       );
 }
 

@@ -11,54 +11,66 @@ class ChatState {
     this.turns = const [],
     this.isSending = false,
     this.errorMessage,
+    this.completedRideId,
   });
 
   final List<ChatTurn> turns;
   final bool isSending;
   final String? errorMessage;
+  final String? completedRideId;
 
   ChatState copyWith({
     List<ChatTurn>? turns,
     bool? isSending,
     String? errorMessage,
+    String? completedRideId,
+    bool clearCompletedRide = false,
   }) {
     return ChatState(
       turns: turns ?? this.turns,
       isSending: isSending ?? this.isSending,
       errorMessage: errorMessage,
+      completedRideId: clearCompletedRide
+          ? null
+          : (completedRideId ?? this.completedRideId),
     );
   }
 }
 
 class ChatNotifier extends Notifier<ChatState> {
   Timer? _searchTimer;
+  Timer? _completionTimer;
+  Timer? _deliveryTimer;
   String? _searchingRideId;
   int _searchingTurnIndex = -1;
+  String? _pollingDeliveryId;
+  String? _lastSeenReplyAt;
 
   @override
   ChatState build() {
-    ref.onDispose(() => _searchTimer?.cancel());
+    ref.onDispose(() {
+      _searchTimer?.cancel();
+      _completionTimer?.cancel();
+      _deliveryTimer?.cancel();
+    });
     return ChatState(turns: [_buildWelcomeTurn()]);
   }
 
-  /// Builds a time-aware, personalised welcome message.
   ChatTurn _buildWelcomeTurn() {
     final authState = ref.read(authProvider);
     final name = authState.session?.name ?? '';
-
     final hour = DateTime.now().hour;
     final greeting = hour < 12
         ? 'Good morning'
         : hour < 17
             ? 'Good afternoon'
             : 'Good evening';
-
     final nameClause = name.isNotEmpty ? ', $name' : '';
-    final text =
-        '$greeting$nameClause! 👋 Where would you like to go today, '
-        'or what would you like delivered?';
-
-    return ChatTurn(role: ChatTurnRole.agent, text: text);
+    return ChatTurn(
+      role: ChatTurnRole.agent,
+      text: '$greeting$nameClause! 👋 Where would you like to go today, '
+          'or what would you like delivered?',
+    );
   }
 
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
@@ -82,7 +94,7 @@ class ChatNotifier extends Notifier<ChatState> {
       final response = await _repo.sendMessage(trimmed);
 
       if (response.rideId != null && response.fareUgx == null) {
-        // Driver-first flow: ride dispatched, waiting for driver to accept.
+        // Driver-first flow: searching for driver
         final searchTurnIndex = state.turns.length;
         state = state.copyWith(
           turns: [
@@ -97,6 +109,16 @@ class ChatNotifier extends Notifier<ChatState> {
           isSending: false,
         );
         _startSearchPolling(response.rideId!, searchTurnIndex);
+      } else if (response.deliveryId != null) {
+        // Delivery created - poll for admin reply
+        state = state.copyWith(
+          turns: [
+            ...state.turns,
+            ChatTurn(role: ChatTurnRole.agent, text: response.reply),
+          ],
+          isSending: false,
+        );
+        _startDeliveryPolling(response.deliveryId!);
       } else {
         state = state.copyWith(
           turns: [
@@ -107,7 +129,7 @@ class ChatNotifier extends Notifier<ChatState> {
               fareUgx: response.fareUgx,
               fareStatus:
                   response.fareUgx != null ? FareQuoteStatus.pending : null,
-              driverName:  response.driverName,
+              driverName: response.driverName,
               driverPhone: response.driverPhone,
               driverPlate: response.driverPlate,
             ),
@@ -128,32 +150,27 @@ class ChatNotifier extends Notifier<ChatState> {
     _searchingTurnIndex = turnIndex;
     _pollRideStatus();
     _searchTimer = Timer.periodic(
-      const Duration(seconds: 4),
-      (_) => _pollRideStatus(),
-    );
+        const Duration(seconds: 4), (_) => _pollRideStatus());
   }
 
   Future<void> _pollRideStatus() async {
     final rideId = _searchingRideId;
     if (rideId == null) return;
-
     try {
       final status = await _repo.getRideStatus(rideId);
-
       if (status.isAccepted) {
         _searchTimer?.cancel();
         _searchTimer = null;
         _searchingRideId = null;
-
         final updatedTurns = List<ChatTurn>.from(state.turns);
         if (_searchingTurnIndex >= 0 &&
             _searchingTurnIndex < updatedTurns.length) {
           updatedTurns[_searchingTurnIndex] =
               updatedTurns[_searchingTurnIndex].copyWith(
             isSearching: false,
-            fareUgx:     status.fareUgx,
-            fareStatus:  FareQuoteStatus.pending,
-            driverName:  status.driverName,
+            fareUgx: status.fareUgx,
+            fareStatus: FareQuoteStatus.pending,
+            driverName: status.driverName,
             driverPhone: status.driverPhone,
             driverPlate: status.driverPlate,
           );
@@ -163,21 +180,83 @@ class ChatNotifier extends Notifier<ChatState> {
         _searchTimer?.cancel();
         _searchTimer = null;
         _searchingRideId = null;
-
         final updatedTurns = List<ChatTurn>.from(state.turns);
         if (_searchingTurnIndex >= 0 &&
             _searchingTurnIndex < updatedTurns.length) {
           updatedTurns[_searchingTurnIndex] = ChatTurn(
             role: ChatTurnRole.agent,
-            text:
-                "Sorry, we couldn't find a driver right now. Please try again in a few minutes.",
+            text: "Sorry, we couldn't find a driver right now. Please try again.",
           );
         }
         state = state.copyWith(turns: updatedTurns);
       }
-    } catch (_) {
-      // Silent - don't disrupt the passenger's view.
-    }
+    } catch (_) {}
+  }
+
+  // ── Delivery admin reply polling ──────────────────────────────────────────
+
+  /// Polls every 15 seconds for admin reply on a delivery request.
+  void _startDeliveryPolling(String deliveryId) {
+    _deliveryTimer?.cancel();
+    _pollingDeliveryId = deliveryId;
+    _lastSeenReplyAt = null;
+    _deliveryTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _pollDeliveryStatus(),
+    );
+  }
+
+  Future<void> _pollDeliveryStatus() async {
+    final deliveryId = _pollingDeliveryId;
+    if (deliveryId == null) return;
+    try {
+      final status = await _repo.getDeliveryStatus(deliveryId);
+
+      if (status.hasReply &&
+          status.repliedAt != null &&
+          status.repliedAt != _lastSeenReplyAt) {
+        // New admin reply - show it as a chat message
+        _lastSeenReplyAt = status.repliedAt;
+        state = state.copyWith(
+          turns: [
+            ...state.turns,
+            ChatTurn(
+              role: ChatTurnRole.agent,
+              text: status.adminReply!,
+            ),
+          ],
+        );
+      }
+
+      // Stop polling once delivery is closed
+      if (status.isClosed) {
+        _deliveryTimer?.cancel();
+        _deliveryTimer = null;
+        _pollingDeliveryId = null;
+      }
+    } catch (_) {}
+  }
+
+  // ── Ride completion polling ───────────────────────────────────────────────
+
+  void _startCompletionPolling(String rideId) {
+    _completionTimer?.cancel();
+    _completionTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) async {
+        try {
+          final status = await _repo.getRideStatus(rideId);
+          if (status.isCompleted) {
+            _completionTimer?.cancel();
+            _completionTimer = null;
+            state = state.copyWith(completedRideId: rideId);
+          } else if (status.isCancelled) {
+            _completionTimer?.cancel();
+            _completionTimer = null;
+          }
+        } catch (_) {}
+      },
+    );
   }
 
   // ── Fare card ─────────────────────────────────────────────────────────────
@@ -190,7 +269,6 @@ class ChatNotifier extends Notifier<ChatState> {
 
     try {
       final result = await _repo.confirmRide(rideId, confirmed);
-
       final updatedTurns = List<ChatTurn>.from(state.turns);
       updatedTurns[turnIndex] = updatedTurns[turnIndex].copyWith(
         fareStatus:
@@ -198,22 +276,32 @@ class ChatNotifier extends Notifier<ChatState> {
       );
       updatedTurns
           .add(ChatTurn(role: ChatTurnRole.agent, text: result.message));
-
       state = state.copyWith(turns: updatedTurns, isSending: false);
+
+      if (confirmed) _startCompletionPolling(rideId);
     } catch (e) {
       state = state.copyWith(isSending: false, errorMessage: e.toString());
     }
   }
 
-  // ── Chat history ──────────────────────────────────────────────────────────
+  // ── History + rating ──────────────────────────────────────────────────────
 
-  /// Clears all messages and resets to the personalised welcome greeting.
   void clearHistory() {
     _searchTimer?.cancel();
+    _completionTimer?.cancel();
+    _deliveryTimer?.cancel();
     _searchTimer = null;
+    _completionTimer = null;
+    _deliveryTimer = null;
     _searchingRideId = null;
     _searchingTurnIndex = -1;
+    _pollingDeliveryId = null;
+    _lastSeenReplyAt = null;
     state = ChatState(turns: [_buildWelcomeTurn()]);
+  }
+
+  void clearCompletedRide() {
+    state = state.copyWith(clearCompletedRide: true);
   }
 }
 

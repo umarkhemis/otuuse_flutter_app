@@ -34,7 +34,7 @@ class AdminHomeScreen extends ConsumerWidget {
             tabs: [
               Tab(icon: Icon(Icons.dashboard_outlined), text: 'Overview'),
               Tab(icon: Icon(Icons.people_outline), text: 'Drivers'),
-              Tab(icon: Icon(Icons.directions_bike_outlined), text: 'Rides'),
+              Tab(icon: Icon(Icons.local_shipping_outlined), text: 'Deliveries'),
             ],
           ),
         ),
@@ -42,7 +42,7 @@ class AdminHomeScreen extends ConsumerWidget {
           children: [
             _OverviewTab(),
             _DriversTab(),
-            _RidesTab(),
+            _DeliveriesTab(),
           ],
         ),
       ),
@@ -673,112 +673,215 @@ class _OnboardDriverSheetState
   }
 }
 
-// ── Rides tab ─────────────────────────────────────────────────────────────────
+// ── Deliveries tab ───────────────────────────────────────────────────────────
 
-class _RidesTab extends ConsumerWidget {
-  const _RidesTab();
-
-  String _formatUgx(int n) {
-    final s = n.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      final fromEnd = s.length - i;
-      buf.write(s[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) buf.write(',');
-    }
-    return buf.toString();
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'completed':
-      case 'paid':
-        return Colors.green;
-      case 'in_progress':
-      case 'driver_arriving':
-      case 'accepted':
-      case 'matched':
-        return Colors.orange;
-      case 'cancelled':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
+class _DeliveriesTab extends ConsumerWidget {
+  const _DeliveriesTab();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(adminProvider);
 
-    // Lazy load rides when this tab is first viewed
-    if (state.rides.isEmpty && !state.isLoadingRides) {
-      Future.microtask(
-          () => ref.read(adminProvider.notifier).loadRides());
-    }
-
-    if (state.isLoadingRides) {
+    if (state.isLoadingDeliveries) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    if (state.rides.isEmpty) {
-      return const Center(child: Text('No rides yet'));
+    if (state.deliveries.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_shipping_outlined, size: 48,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3)),
+            const SizedBox(height: 12),
+            Text('No delivery requests yet',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5))),
+          ],
+        ),
+      );
     }
+    return RefreshIndicator(
+      onRefresh: () => ref.read(adminProvider.notifier).loadDeliveries(),
+      child: ListView.separated(
+        padding: const EdgeInsets.all(12),
+        itemCount: state.deliveries.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (_, i) => _DeliveryCard(delivery: state.deliveries[i]),
+      ),
+    );
+  }
+}
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: state.rides.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) {
-        final ride = state.rides[i];
-        final color = _statusColor(ride.status);
-        final fare =
-            ride.finalFareUgx ?? ride.estimatedFareUgx;
-        return Card(
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 8),
-            title: Text(
-              '${ride.pickupName} → ${ride.dropoffName}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              ride.requestedAt.substring(0, 10),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
+class _DeliveryCard extends ConsumerWidget {
+  const _DeliveryCard({required this.delivery});
+  final DeliveryListItem delivery;
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'pending': return Colors.orange;
+      case 'confirmed': return Colors.blue;
+      case 'in_progress': return Colors.purple;
+      case 'completed': return Colors.green;
+      case 'cancelled': return Colors.red;
+      default: return Colors.grey;
+    }
+  }
+
+  String _fmt(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      return '${dt.day}/${dt.month} ${dt.hour.toString().padLeft(2,"0")}:${dt.minute.toString().padLeft(2,"0")}';
+    } catch (_) { return iso.substring(0, 10); }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final color = _statusColor(delivery.status);
+    final isOpen = delivery.status == 'pending' || delivery.status == 'confirmed';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                child: Text(delivery.status.replaceAll('_', ' '),
+                    style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+              ),
+              if (delivery.isUrgent) ...[
+                const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    ride.status.replaceAll('_', ' '),
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: color,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'UGX ${_formatUgx(fare)}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: Colors.red.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                  child: const Text('URGENT', style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.w700)),
                 ),
               ],
+              const Spacer(),
+              Text(_fmt(delivery.createdAt), style: Theme.of(context).textTheme.bodySmall),
+            ]),
+            const SizedBox(height: 10),
+            Text(delivery.itemDescription,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Row(children: [
+              Icon(Icons.radio_button_checked, size: 14, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 4),
+              Expanded(child: Text(delivery.pickupName, style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
+            ]),
+            const SizedBox(height: 2),
+            Row(children: [
+              Icon(Icons.location_on, size: 14, color: Colors.red.shade400),
+              const SizedBox(width: 4),
+              Expanded(child: Text(delivery.dropoffName, style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
+            ]),
+            if (isOpen) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => showModalBottomSheet(
+                    context: context, isScrollControlled: true, useSafeArea: true,
+                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                    builder: (_) => _DeliveryReplySheet(delivery: delivery, ref: ref),
+                  ),
+                  icon: const Icon(Icons.reply, size: 18),
+                  label: const Text('Reply to Passenger'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeliveryReplySheet extends StatefulWidget {
+  const _DeliveryReplySheet({required this.delivery, required this.ref});
+  final DeliveryListItem delivery;
+  final WidgetRef ref;
+  @override
+  State<_DeliveryReplySheet> createState() => _DeliveryReplySheetState();
+}
+
+class _DeliveryReplySheetState extends State<_DeliveryReplySheet> {
+  final _ctrl = TextEditingController();
+  String? _status;
+  bool _sending = false;
+  String? _error;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _submit() async {
+    if (_ctrl.text.trim().isEmpty) { setState(() => _error = 'Please type a message'); return; }
+    setState(() { _sending = true; _error = null; });
+    final ok = await widget.ref.read(adminProvider.notifier).replyToDelivery(
+        widget.delivery.id, _ctrl.text.trim(), _status);
+    if (mounted) {
+      if (ok) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reply sent to passenger')));
+      } else {
+        setState(() { _sending = false; _error = 'Failed. Please try again.'; });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [
+              Expanded(child: Text('Reply to Passenger', style: Theme.of(context).textTheme.titleLarge)),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+            ]),
+            Text('Delivery: ${widget.delivery.itemDescription}', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            if (_error != null) ...[
+              Container(padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: Text(_error!, style: TextStyle(color: Colors.red.shade900))),
+              const SizedBox(height: 12),
+            ],
+            TextField(controller: _ctrl, maxLines: 4,
+                decoration: const InputDecoration(hintText: 'Type your message...', border: OutlineInputBorder())),
+            const SizedBox(height: 14),
+            Row(children: [
+              Text('Update status:', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(width: 12),
+              DropdownButton<String?>(
+                value: _status,
+                hint: const Text('No change'),
+                items: const [
+                  DropdownMenuItem(value: null, child: Text('No change')),
+                  DropdownMenuItem(value: 'confirmed', child: Text('Confirmed')),
+                  DropdownMenuItem(value: 'in_progress', child: Text('In Progress')),
+                  DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                  DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
+                ],
+                onChanged: (v) => setState(() => _status = v),
+              ),
+            ]),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _sending ? null : _submit,
+              child: _sending
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Send Reply'),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 }

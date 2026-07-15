@@ -50,4 +50,16 @@ class ChatRepository {
       throw ApiException.fromDioException(e);
     }
   }
+
+  Future<DeliveryStatusResponse> getDeliveryStatus(String deliveryId) async {
+    try {
+      final response =
+          await _apiClient.dio.get('/chat/delivery-status/$deliveryId');
+      return DeliveryStatusResponse.fromJson(
+          response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDioException(e);
+    }
+  }
+
 }

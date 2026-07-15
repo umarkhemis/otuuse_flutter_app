@@ -8,11 +8,12 @@ class AdminState {
   const AdminState({
     this.stats,
     this.drivers = const [],
-    this.rides = const [],
+    this.deliveries = const [],
     this.isLoadingStats = false,
     this.isLoadingDrivers = false,
-    this.isLoadingRides = false,
+    this.isLoadingDeliveries = false,
     this.isOnboarding = false,
+    this.isReplying = false,
     this.lastOnboardResult,
     this.pendingActionDriverId,
     this.errorMessage,
@@ -20,25 +21,25 @@ class AdminState {
 
   final DashboardStats? stats;
   final List<DriverListItem> drivers;
-  final List<RecentRide> rides;
+  final List<DeliveryListItem> deliveries;
   final bool isLoadingStats;
   final bool isLoadingDrivers;
-  final bool isLoadingRides;
+  final bool isLoadingDeliveries;
   final bool isOnboarding;
+  final bool isReplying;
   final OnboardResult? lastOnboardResult;
-
-  /// Which driver ID is currently being suspended/reinstated.
   final String? pendingActionDriverId;
   final String? errorMessage;
 
   AdminState copyWith({
     DashboardStats? stats,
     List<DriverListItem>? drivers,
-    List<RecentRide>? rides,
+    List<DeliveryListItem>? deliveries,
     bool? isLoadingStats,
     bool? isLoadingDrivers,
-    bool? isLoadingRides,
+    bool? isLoadingDeliveries,
     bool? isOnboarding,
+    bool? isReplying,
     OnboardResult? lastOnboardResult,
     bool clearOnboardResult = false,
     String? pendingActionDriverId,
@@ -49,11 +50,12 @@ class AdminState {
     return AdminState(
       stats: stats ?? this.stats,
       drivers: drivers ?? this.drivers,
-      rides: rides ?? this.rides,
+      deliveries: deliveries ?? this.deliveries,
       isLoadingStats: isLoadingStats ?? this.isLoadingStats,
       isLoadingDrivers: isLoadingDrivers ?? this.isLoadingDrivers,
-      isLoadingRides: isLoadingRides ?? this.isLoadingRides,
+      isLoadingDeliveries: isLoadingDeliveries ?? this.isLoadingDeliveries,
       isOnboarding: isOnboarding ?? this.isOnboarding,
+      isReplying: isReplying ?? this.isReplying,
       lastOnboardResult: clearOnboardResult
           ? null
           : (lastOnboardResult ?? this.lastOnboardResult),
@@ -72,8 +74,13 @@ class AdminNotifier extends Notifier<AdminState> {
     Future.microtask(() {
       loadDashboard();
       loadDrivers();
+      loadDeliveries();
     });
-    return const AdminState(isLoadingStats: true, isLoadingDrivers: true);
+    return const AdminState(
+      isLoadingStats: true,
+      isLoadingDrivers: true,
+      isLoadingDeliveries: true,
+    );
   }
 
   AdminRepository get _repo =>
@@ -85,8 +92,7 @@ class AdminNotifier extends Notifier<AdminState> {
       final stats = await _repo.getDashboard();
       state = state.copyWith(stats: stats, isLoadingStats: false);
     } catch (e) {
-      state = state.copyWith(
-          isLoadingStats: false, errorMessage: e.toString());
+      state = state.copyWith(isLoadingStats: false, errorMessage: e.toString());
     }
   }
 
@@ -96,29 +102,45 @@ class AdminNotifier extends Notifier<AdminState> {
       final drivers = await _repo.listDrivers();
       state = state.copyWith(drivers: drivers, isLoadingDrivers: false);
     } catch (e) {
-      state = state.copyWith(
-          isLoadingDrivers: false, errorMessage: e.toString());
+      state =
+          state.copyWith(isLoadingDrivers: false, errorMessage: e.toString());
     }
   }
 
-  Future<void> loadRides() async {
-    if (state.rides.isNotEmpty) return; // only load once per session
-    state = state.copyWith(isLoadingRides: true);
+  Future<void> loadDeliveries() async {
+    state = state.copyWith(isLoadingDeliveries: true, clearError: true);
     try {
-      final rides = await _repo.listRides();
-      state = state.copyWith(rides: rides, isLoadingRides: false);
+      final deliveries = await _repo.listDeliveries();
+      state = state.copyWith(
+          deliveries: deliveries, isLoadingDeliveries: false);
     } catch (e) {
       state = state.copyWith(
-          isLoadingRides: false, errorMessage: e.toString());
+          isLoadingDeliveries: false, errorMessage: e.toString());
     }
   }
 
-  /// Returns the invite code on success, null on failure.
+  /// Returns true on success. UI shows snackbar based on result.
+  Future<bool> replyToDelivery(
+      String deliveryId, String message, String? newStatus) async {
+    state = state.copyWith(isReplying: true, clearError: true);
+    try {
+      await _repo.replyToDelivery(deliveryId, message, newStatus);
+      state = state.copyWith(isReplying: false);
+      await loadDeliveries(); // refresh list
+      return true;
+    } catch (e) {
+      state =
+          state.copyWith(isReplying: false, errorMessage: e.toString());
+      return false;
+    }
+  }
+
   Future<OnboardResult?> onboardDriver({
     required String phoneNumber,
     required String name,
     required String initialPin,
     required int subscriptionMonths,
+    String? plateNumber,
   }) async {
     state = state.copyWith(isOnboarding: true, clearError: true);
     try {
@@ -127,14 +149,14 @@ class AdminNotifier extends Notifier<AdminState> {
         name: name,
         initialPin: initialPin,
         subscriptionMonths: subscriptionMonths,
+        plateNumber: plateNumber,
       );
-      state = state.copyWith(
-          isOnboarding: false, lastOnboardResult: result);
-      await loadDrivers(); // refresh list
+      state = state.copyWith(isOnboarding: false, lastOnboardResult: result);
+      await loadDrivers();
       return result;
     } catch (e) {
-      state = state.copyWith(
-          isOnboarding: false, errorMessage: e.toString());
+      state =
+          state.copyWith(isOnboarding: false, errorMessage: e.toString());
       return null;
     }
   }
